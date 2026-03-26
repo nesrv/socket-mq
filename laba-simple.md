@@ -1132,20 +1132,43 @@ docker compose up -d --build worker
 curl -s http://127.0.0.1:8100/health
 ```
 
+В корне проекта должен лежать файл **`pytest.ini`** с настройкой `pythonpath = .`, иначе при запуске `pytest` из каталога репозитория импорт `from app.main` не находит пакет `app` (так же настроен CI в GitHub Actions).
+
+```ini
+[pytest]
+pythonpath = .
+testpaths = tests
+```
+
 Минимальный автотест с использованием **pytest**: создайте в проекте каталог `tests` и файл `tests/test_health.py` со следующим содержимым:
 
 ```python
+import asyncio
+
+import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+
+import app.main as main
 
 
-def test_health():
-    # В CI нет PostgreSQL/RabbitMQ — не запускаем lifespan (подключения mq и БД).
-    with TestClient(app, lifespan="off") as client:
+def test_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def noop() -> None:
+        return None
+
+    async def fake_consume() -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(main, "init_models", noop)
+    monkeypatch.setattr(main.mq, "connect", noop)
+    monkeypatch.setattr(main, "consume_persisted_events", fake_consume)
+
+    with TestClient(main.app) as client:
         response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 ```
+
+В тесте подменяются `init_models`, `mq.connect` и фоновая `consume_persisted_events`, чтобы не подключаться к PostgreSQL и RabbitMQ (в CI их нет). В **Starlette 1.x** у `TestClient` больше нет режима `lifespan="off"`, поэтому такой способ надёжнее.
 
 Запуск теста внутри контейнера **web** из корня проекта:
 ```bash
