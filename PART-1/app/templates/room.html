@@ -4,6 +4,7 @@
 
 <section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
   <div id="messages" class="messages"></div>
+
   <form id="message-form" class="message-form" ws-send>
     <input type="text" name="username" placeholder="Ваш ник" required />
     <input type="text" name="text" placeholder="Сообщение" required />

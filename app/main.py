@@ -1,59 +1,60 @@
-import asyncio
 import json
 from html import escape
 from datetime import datetime
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
+from typing import TypedDict
+
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.db import init_models
-from app.mq import mq, MQ_QUEUE_PERSISTED, MQ_ROUTING_KEY_CREATED
 from app.ws import manager
 
 
-templates = Jinja2Templates(directory="app/templates")
-persisted_task: asyncio.Task | None = None
+class ChatMessage(TypedDict):
+    username: str
+    text: str
+    created_at: str
 
 
-async def consume_persisted_events():
-    queue = await mq.channel.get_queue(MQ_QUEUE_PERSISTED)
-    async with queue.iterator() as iterator:
-        async for message in iterator:
-            async with message.process(requeue=True):
-                data = json.loads(message.body.decode("utf-8"))
-                html_fragment = (
-                    '<div id="messages" hx-swap-oob="beforeend">'
-                    '<article class="msg">'
-                    "<header>"
-                    f"<strong>{escape(str(data['username']))}</strong>"
-                    f"<small>{escape(str(data['created_at']))}</small>"
-                    "</header>"
-                    f"<p>{escape(str(data['text']))}</p>"
-                    "</article>"
-                    "</div>"
-                )
-                await manager.broadcast(
-                    data["room_id"],
-                    html_fragment,
-                )
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global persisted_task
-    await init_models()
-    await mq.connect()
-    persisted_task = asyncio.create_task(consume_persisted_events())
-    yield
-    if persisted_task:
-        persisted_task.cancel()
-    await mq.close()
-
-
-app = FastAPI(title="Socket MQ Chat", lifespan=lifespan)
+app = FastAPI(title="Socket MQ Chat V0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
+# In-memory history for demo purposes only.
+messages_by_room: dict[str, list[ChatMessage]] = {}
+
+
+def render_message_fragment(msg: ChatMessage) -> str:
+    return (
+        '<div id="messages" hx-swap-oob="beforeend">'
+        '<article class="msg">'
+        "<header>"
+        f"<strong>{escape(msg['username'])}</strong>"
+        f"<small>{escape(msg['created_at'])}</small>"
+        "</header>"
+        f"<p>{escape(msg['text'])}</p>"
+        "</article>"
+        "</div>"
+    )
+
+
+def parse_ws_payload(raw: str) -> ChatMessage | None:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    username = str(data.get("username", "")).strip()
+    text = str(data.get("text", "")).strip()
+    if not username or not text:
+        return None
+
+    return {
+        "username": username,
+        "text": text,
+        "created_at": datetime.utcnow().isoformat(),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -74,49 +75,23 @@ async def room_page(request: Request, room_id: str):
     )
 
 
-@app.post("/rooms/{room_id}/messages")
-async def send_message(room_id: str, username: str = Form(...), text: str = Form(...)):
-    username = username.strip()
-    text = text.strip()
-    if not username or not text:
-        raise HTTPException(status_code=400, detail="username/text cannot be empty")
-
-    payload = {
-        "room_id": room_id,
-        "username": username,
-        "text": text,
-        "created_at": datetime.utcnow().isoformat(),
-    }
-    await mq.publish(MQ_ROUTING_KEY_CREATED, payload)
-    return {"status": "queued"}
-
-
 @app.websocket("/ws/{room_id}")
 async def ws_room(ws: WebSocket, room_id: str):
     await manager.connect(room_id, ws)
     try:
+        # Send history to newly connected client.
+        for msg in messages_by_room.get(room_id, []):
+            await ws.send_text(render_message_fragment(msg))
+
         while True:
             raw = await ws.receive_text()
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
+            msg = parse_ws_payload(raw)
+            if not msg:
                 continue
 
-            username = str(data.get("username", "")).strip()
-            text = str(data.get("text", "")).strip()
-            if not username or not text:
-                continue
-
-            payload = {
-                "room_id": room_id,
-                "username": username,
-                "text": text,
-                "created_at": datetime.utcnow().isoformat(),
-            }
-            await mq.publish(MQ_ROUTING_KEY_CREATED, payload)
-    except WebSocketDisconnect:
-        manager.disconnect(room_id, ws)
-    except Exception:
+            messages_by_room.setdefault(room_id, []).append(msg)
+            await manager.broadcast(room_id, render_message_fragment(msg))
+    finally:
         manager.disconnect(room_id, ws)
 
 

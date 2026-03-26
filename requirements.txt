@@ -1,9 +1,3 @@
 fastapi
 uvicorn[standard]
 jinja2
-python-multipart
-aio-pika
-sqlalchemy
-asyncpg
-pytest
-httpx

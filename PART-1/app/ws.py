@@ -16,11 +16,11 @@ class WSManager:
             if not self.rooms[room_id]:
                 del self.rooms[room_id]
 
-    async def broadcast(self, room_id: str, html_fragment: str) -> None:
-        dead: list[WebSocket] = []
+    async def broadcast(self, room_id: str, payload: str) -> None:
+        dead = []
         for ws in self.rooms.get(room_id, set()):
             try:
-                await ws.send_text(html_fragment)
+                await ws.send_text(payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:

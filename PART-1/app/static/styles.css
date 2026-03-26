@@ -1,0 +1,38 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f6f8;
+}
+
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.messages {
+  min-height: 320px;
+  max-height: 500px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.msg {
+  border-bottom: 1px solid #eee;
+  padding: 8px 0;
+}
+
+.msg header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.message-form {
+  display: grid;
+  grid-template-columns: 160px 1fr 120px;
+  gap: 8px;
+}
