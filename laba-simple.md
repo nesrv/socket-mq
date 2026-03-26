@@ -1140,8 +1140,9 @@ from app.main import app
 
 
 def test_health():
-    client = TestClient(app)
-    response = client.get("/health")
+    # В CI нет PostgreSQL/RabbitMQ — не запускаем lifespan (подключения mq и БД).
+    with TestClient(app, lifespan="off") as client:
+        response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 ```
@@ -1190,15 +1191,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - run: pip install -r requirements.txt
       - run: pytest -q
 ```
 
-При необходимости замените `python-version` на ту мажорную версию Python, которую используете локально.
+В примере указана **3.13** — как минимальная версия для этого проекта; при необходимости замените на ту же мажорную версию, что у вас локально (не ниже **3.13**, если так зафиксировано в репозитории).
 
 ### 8.3 Что сдать (дополнительно к разделу 7)
 
