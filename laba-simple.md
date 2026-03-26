@@ -346,18 +346,18 @@ docker compose up -d --build
 
 ---
 
-## 9. Быстрый деплой на VPS через git + ssh
+## 2. Быстрый деплой на VPS через git + ssh
 
 Данные сервера:
 - SSH: `alekseeva@81.90.182.174`
 - Домен: `alekseeva.h1n.ru`
 
-### 9.1 Первый вход
+### 2.1 Первый вход
 ```bash
 ssh alekseeva@81.90.182.174
 ```
 
-### 9.2 Подготовка сервера (один раз)
+### 2.2 Подготовка сервера (один раз)
 ```bash
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
@@ -368,7 +368,7 @@ sudo usermod -aG docker $USER
 
 После этого переподключитесь по SSH.
 
-### 9.3 Клонирование проекта
+### 2.3 Клонирование проекта
 ```bash
 mkdir -p /opt/socket-mq
 cd /opt/socket-mq
@@ -376,7 +376,7 @@ git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> app
 cd app
 ```
 
-### 9.4 Настройка `.env`
+### 2.4 Настройка `.env`
 Создайте файл `.env` рядом с `docker-compose.yml`:
 
 ```env
@@ -384,13 +384,13 @@ APP_HOST=0.0.0.0
 APP_PORT=8100
 ```
 
-### 9.5 Запуск приложения
+### 2.5 Запуск приложения
 ```bash
 docker compose up -d --build
 docker compose ps
 ```
 
-### 9.6 Nginx конфиг для домена
+### 2.6 Nginx конфиг для домена
 Создайте файл `/etc/nginx/sites-available/alekseeva.h1n.ru`:
 
 ```nginx
@@ -423,16 +423,28 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### 9.7 HTTPS сертификат
+Если получили предупреждение `conflicting server name ... ignored`, значит у домена есть дублирующийся конфиг (частая ситуация после ручных правок/старых сайтов).
+Проверьте активные конфиги и оставьте только один для `alekseeva.h1n.ru`:
+
+```bash
+ls -l /etc/nginx/sites-enabled
+sudo grep -R "server_name alekseeva.h1n.ru" /etc/nginx/sites-available /etc/nginx/sites-enabled
+sudo rm /etc/nginx/sites-enabled/alekseeva
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 2.7 HTTPS сертификат
 ```bash
 sudo certbot --nginx -d alekseeva.h1n.ru
 ```
 
-### 9.8 Проверка
+### 2.8 Проверка
 - `http://alekseeva.h1n.ru/health`
 - `https://alekseeva.h1n.ru/health`
+- локально на сервере backend отвечает: `curl -i http://127.0.0.1:8100/health`
 
-### 9.9 Обновление деплоя (каждый раз)
+### 2.9 Обновление деплоя (каждый раз)
 ```bash
 ssh alekseeva@81.90.182.174
 cd /opt/socket-mq/app
@@ -441,6 +453,22 @@ docker compose up -d --build
 ```
 
 
+### 2.10 Принудительное обновление (сотрет локальные правки tracked-файлов)
+Сначала определите актуальную ветку на сервере:
+```bash
+git branch -r
+```
+
+Затем выполните принудительное выравнивание (пример для `origin/master`):
+```bash
+git fetch origin
+git reset --hard origin/master   # замени на нужную ветку
+git clean -fd
+```
+
+
+
+## Часть 2: Чат с базой данных и брокером сообщений
 
 ## 4. Backend (упрощенные Python-файлы)
 

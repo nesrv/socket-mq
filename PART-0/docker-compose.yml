@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    container_name: socket_mq_web_v0
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
+    env_file:
+      - .env
+    volumes:
+      - ./:/code
+    ports:
+      - "8100:8100"
