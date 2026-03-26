@@ -1165,3 +1165,52 @@ docker compose run --rm web pytest -q
 
 ---
 
+## 8. Этап CI (GitHub Actions)
+
+**Цель:** при каждом `push` в ветку **`master`** автоматически запускать тесты из раздела **6**, чтобы ошибки в коде выявлялись до ручного деплоя на VPS.
+
+### 8.1 Что сделать
+
+1. В корне репозитория создайте каталог `.github/workflows/`.
+2. Добавьте файл `.github/workflows/ci.yml` (см. пример ниже).
+3. Шаги job: `checkout`, установка Python, `pip install -r requirements.txt`, `pytest -q`.
+
+Workflow в примере срабатывает **только** на **`push`** в ветку **`master`** (не на Pull Request и не на другие ветки). После первого такого push откройте на GitHub вкладку **Actions** и убедитесь, что запуск **успешно** завершился.
+
+### 8.2 Пример `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+```
+
+При необходимости замените `python-version` на ту мажорную версию Python, которую используете локально.
+
+### 8.3 Что сдать (дополнительно к разделу 7)
+
+- файл `.github/workflows/ci.yml` в репозитории;
+- скриншот успешного запуска workflow (**Actions** → выбранный run → зелёная галочка).
+
+### 8.4 По желанию (необязательно)
+
+- отдельный шаг сборки Docker-образа (`docker build`), чтобы ловить ошибки Dockerfile до сервера;
+- линтер (**ruff** / **flake8**) перед `pytest`.
+
+Если позже понадобится проверять и **Pull Request** в `master` до слияния, в блок `on:` можно добавить `pull_request: branches: [master]`.
+
+---
+
