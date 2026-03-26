@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Комната: {{ room_id }}</h1>
+
+<section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
+  <div id="messages" class="messages"></div>
+
+  <form id="message-form" class="message-form" ws-send>
+    <input type="text" name="username" placeholder="Ваш ник" required />
+    <input type="text" name="text" placeholder="Сообщение" required />
+    <button type="submit">Отправить</button>
+  </form>
+</section>
+{% endblock %}
