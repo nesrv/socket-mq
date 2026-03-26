@@ -18,11 +18,15 @@ persisted_task: asyncio.Task | None = None
 
 
 async def consume_persisted_events():
+    """Читает очередь «сообщение уже в БД»: worker записал строку и опубликовал chat.message.persisted.
+    Здесь web превращает событие в HTML и рассылает только подключениям этой комнаты (не через RabbitMQ к клиентам)."""
     queue = await mq.channel.get_queue(MQ_QUEUE_PERSISTED)
     async with queue.iterator() as iterator:
         async for message in iterator:
+            # requeue=True: при сбое обработки сообщение вернётся в очередь
             async with message.process(requeue=True):
                 data = json.loads(message.body.decode("utf-8"))
+                # hx-swap-oob: фрагмент подменяет/дополняет #messages без перезагрузки страницы
                 html_fragment = (
                     '<div id="messages" hx-swap-oob="beforeend">'
                     '<article class="msg">'
@@ -45,6 +49,7 @@ async def lifespan(app: FastAPI):
     global persisted_task
     await init_models()
     await mq.connect()
+    # Фоном слушаем «persisted», иначе клиенты не получат сообщение после записи worker
     persisted_task = asyncio.create_task(consume_persisted_events())
     yield
     if persisted_task:
@@ -76,6 +81,7 @@ async def room_page(request: Request, room_id: str):
 
 @app.post("/rooms/{room_id}/messages")
 async def send_message(room_id: str, username: str = Form(...), text: str = Form(...)):
+    # Тот же путь в очередь, что и у WebSocket; удобно для POST-скриптов (например tests/ws_check.py)
     username = username.strip()
     text = text.strip()
     if not username or not text:
@@ -96,6 +102,7 @@ async def ws_room(ws: WebSocket, room_id: str):
     await manager.connect(room_id, ws)
     try:
         while True:
+            # htmx-ext-ws с ws-send шлёт текстовые кадры: JSON с полями формы
             raw = await ws.receive_text()
             try:
                 data = json.loads(raw)

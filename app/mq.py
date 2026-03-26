@@ -19,6 +19,7 @@ class MQ:
         self.exchange = None
 
     async def connect(self):
+        # RabbitMQ при старте compose может подняться позже web — несколько попыток
         last_error = None
         for _ in range(20):
             try:
@@ -37,6 +38,7 @@ class MQ:
         await self.channel.declare_queue(MQ_QUEUE_PERSISTED, durable=True)
         q_in = await self.channel.get_queue(MQ_QUEUE_INCOMING)
         q_out = await self.channel.get_queue(MQ_QUEUE_PERSISTED)
+        # created: web → worker; persisted: worker → web (рассылка в сокеты)
         await q_in.bind(self.exchange, routing_key=MQ_ROUTING_KEY_CREATED)
         await q_out.bind(self.exchange, routing_key=MQ_ROUTING_KEY_PERSISTED)
 

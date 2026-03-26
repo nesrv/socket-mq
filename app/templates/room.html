@@ -2,6 +2,7 @@
 {% block content %}
 <h1>Комната: {{ room_id }}</h1>
 
+<!-- ws-connect: один WebSocket; ws-send: submit формы уходит кадром JSON по этому сокету -->
 <section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
   <div id="messages" class="messages"></div>
 
@@ -54,6 +55,7 @@
           textInput.value = `${baseText} #${i}`;
           form.requestSubmit();
         }
+        // уступить очередь событий: иначе браузер может подвиснуть на сотнях submit подряд
         await new Promise((r) => setTimeout(r, 0));
       }
 

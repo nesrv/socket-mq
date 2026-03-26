@@ -1,6 +1,6 @@
 # Лабораторная работа: простой чат на FastAPI + HTMX ws extension
 
-Сквозная нумерация разделов верхнего уровня: **`## 1` … `## 7`**. В **части 1** — разделы **1** (окружение и файлы простого чата, вариант 0) и **2** (деплой на VPS). В **части 2** — разделы **3** … **7** (серверная часть с PostgreSQL и RabbitMQ, шаблоны, проверка, тесты, сдача). Подразделы вида **`3.1`**, **`5.2`** относятся к родительскому разделу **3** или **5**.
+**Часть 1:** разделы **1–2** (вариант 0 и деплой). **Часть 2:** разделы **3–8** (PostgreSQL, RabbitMQ, шаблоны, проверки, тесты, сдача, CI). Подразделы **`3.1`**, **`5.2`** и т.п. относятся к родительскому разделу.
 
 ## Часть 1: Простой чат на сокетах
 
@@ -88,9 +88,6 @@ services:
       - "8100:8000"
 ```
 
-
-
-
 ### 1.5 Подготовьте структуру папок
 
 Перед созданием файлов создайте каталоги проекта.
@@ -106,6 +103,8 @@ mkdir app, app\templates, app\static
 ```
 
 ### 1.6 Пошагово: создаем файлы простого чата (текущий рабочий вариант)
+
+**Правило:** после **каждого** шага ниже выполняйте для него блок **«Проверка после шага»** (запуск контейнера и/или `curl`/браузер). Не переходите к следующему шагу, пока проверка не подтверждает ожидаемое поведение или пока описано иное (например, на шаге 1 полного запуска ещё нет).
 
 #### Шаг 1. Создайте `app/ws.py` (менеджер WS комнат)
 ```python
@@ -144,6 +143,8 @@ class WSManager:
 
 manager = WSManager()
 ```
+
+**Проверка после шага 1.** Само по себе приложение ещё не собирается: нет `main.py` и точки входа Uvicorn. Ошибок в файле быть не должно; переходите к шагу 2.
 
 #### Шаг 2. Создайте `app/main.py` (HTTP + WS + in-memory история)
 ```python
@@ -253,6 +254,14 @@ async def health():
     return {"status": "ok"}
 ```
 
+**Проверка после шага 2.** В корне проекта (где `docker-compose.yml`) скопируйте окружение и поднимите контейнер, если ещё не делали:
+```bash
+cp .env.example .env
+docker compose up -d --build
+curl -s http://localhost:8100/health
+```
+Должно вернуться `{"status":"ok"}`. Страницы `/` и `/rooms/room-1` пока отдадут ошибку шаблона — файлы `base.html` и `room.html` появятся на шагах 3–4. Это нормально.
+
 #### Шаг 3. Создайте шаблон `app/templates/base.html`
 ```html
 <!doctype html>
@@ -274,77 +283,22 @@ async def health():
 </html>
 ```
 
-#### Шаг 4. Создайте шаблон `app/templates/room.html`
-Ниже — полный шаблон: форма с `ws-send`, кнопки **«Отправить 100»** / **«Отправить 1000»** и скрипт `sendBurst` (см. также раздел **2.11**).
-
-```html
-{% extends "base.html" %}
-{% block content %}
-<h1>Комната: {{ room_id }}</h1>
-
-<section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
-  <div id="messages" class="messages"></div>
-
-  <form id="message-form" class="message-form" ws-send>
-    <input type="text" name="username" placeholder="Ваш ник" required />
-    <input type="text" name="text" placeholder="Сообщение" required />
-    <button type="submit">Отправить</button>
-  </form>
-
-  <div class="burst-controls">
-    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
-    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
-  </div>
-
-  <script>
-    let burstBusy = false;
-
-    function setFormDefaultsIfEmpty() {
-      const form = document.getElementById('message-form');
-      const usernameInput = form.querySelector('input[name="username"]');
-      const textInput = form.querySelector('input[name="text"]');
-
-      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
-      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
-    }
-
-    async function sendBurst(count) {
-      if (burstBusy) return;
-      burstBusy = true;
-
-      const form = document.getElementById('message-form');
-      const usernameInput = form.querySelector('input[name="username"]');
-      const textInput = form.querySelector('input[name="text"]');
-
-      setFormDefaultsIfEmpty();
-      const baseText = textInput.value.trim();
-      usernameInput.focus();
-
-      const btn100 = document.getElementById('send-100');
-      const btn1000 = document.getElementById('send-1000');
-      if (btn100) btn100.disabled = true;
-      if (btn1000) btn1000.disabled = true;
-
-      let i = 1;
-      const batchSize = 20;
-
-      while (i <= count) {
-        const end = Math.min(count, i + batchSize - 1);
-        for (; i <= end; i++) {
-          textInput.value = `${baseText} #${i}`;
-          form.requestSubmit();
-        }
-        await new Promise((r) => setTimeout(r, 0));
-      }
-
-      burstBusy = false;
-      if (btn100) btn100.disabled = false;
-      if (btn1000) btn1000.disabled = false;
-    }
-  </script>
-</section>
-{% endblock %}
+**Проверка после шага 3.** Пересоберите или перезапустите **web**, чтобы подхватить шаблон:
+```bash
+docker compose up -d --build
+curl -s http://localhost:8100/health
 ```
+`/health` по-прежнему JSON. Страница комнаты заработает после шага 4 (`room.html`).
+
+#### Шаг 4. Создайте шаблон `app/templates/room.html`
+
+Полный листинг с кнопками **«Отправить 100»** / **«Отправить 1000»** и скриптом `sendBurst` — в **§2.11**; скопируйте код оттуда в файл.
+
+**Проверка после шага 4.**
+```bash
+docker compose up -d --build
+```
+Откройте в браузере `http://localhost:8100/rooms/room-1`, отправьте тестовое сообщение. Чат должен работать по WebSocket; оформление доработаете на шаге 5 (`styles.css`).
 
 #### Шаг 5. Создайте `app/static/styles.css`
 ```css
@@ -394,17 +348,13 @@ body {
 }
 ```
 
-
-Запуск:
+**Проверка после шага 5 (итог варианта 0).**
 ```bash
-cp .env.example .env
 docker compose up -d --build
 ```
-
-
-Проверка:
-- `http://localhost:8100/health` возвращает `{"status":"ok"}`;
-- страница чата открывается на `http://localhost:8100/rooms/room-1`.
+- `curl -s http://localhost:8100/health` → `{"status":"ok"}`;
+- `http://localhost:8100/rooms/room-1` — страница со стилями, форма и кнопки нагрузки (**§2.11**);
+- две вкладки с той же комнатой: сообщение из одной видно в другой.
 
 ---
 
@@ -446,7 +396,7 @@ APP_HOST=0.0.0.0
 APP_PORT=8000
 ```
 
-Остальные переменные для варианта 0 не требуются. Порт **8000** — внутри контейнера; обращение с хоста — `http://localhost:8100` при пробросе `8100:8000` в `docker-compose.yml`.
+Остальные переменные для варианта 0 не требуются. Проброс портов — как в **§1.4** (`8100:8000`).
 
 ### 2.5 Запуск приложения
 ```bash
@@ -530,17 +480,82 @@ git reset --hard origin/master   # замени на нужную ветку
 git clean -fd
 ```
 
-### 2.11 Имитация нагрузки через кнопки в чате
-Для наглядной проверки поведения чата под серией сообщений в интерфейсе добавлены кнопки:
+### 2.11 Имитация нагрузки: шаблон `room.html` и кнопки «100» / «1000»
 
-- **«Отправить 100»** — последовательно отправляет 100 сообщений в текущую комнату;
-- **«Отправить 1000»** — то же для 1000 сообщений.
+#### Шаг 4. Создайте `app/templates/room.html`
 
-Они стоят под обычной формой в `app/templates/room.html`, используют ту же форму с атрибутом `ws-send`: для каждого номера меняется поле `text` и вызывается `form.requestSubmit()`, расширение WebSocket для HTMX отправляет JSON по уже открытому соединению. В **части 1** (простой чат) сообщения обрабатываются только в памяти процесса **web**; в **части 2** каждое сообщение проходит цепочку RabbitMQ → worker → PostgreSQL → рассылка по WebSocket — нагрузочные кнопки удобны для демонстрации очередей и задержек.
+В этом файле задаются форма с `ws-send`, блок **«Отправить 100»** / **«Отправить 1000»** и скрипт **`sendBurst`**: для каждого номера меняется поле `text`, вызывается `form.requestSubmit()`, расширение WebSocket для HTMX шлёт JSON по уже открытому соединению. В **части 1** сообщения остаются в памяти **web**; в **части 2** — цепочка RabbitMQ → worker → PostgreSQL → рассылка по WebSocket; кнопки удобны для демонстрации очередей и задержек. Тот же шаблон для части 2 — в **§4.2**; стили (включая `.burst-controls`) — **§1.6 шаг 5** и **§4.3**.
 
-Полные листинги разметки, скрипта и класса `.burst-controls` см. в **шаге 4** и **шаге 5** (часть 1) и в подразделах **4.2** и **4.3** (часть 2); в учебном репозитории они уже встроены в проект.
+```html
+{% extends "base.html" %}
+{% block content %}
+<h1>Комната: {{ room_id }}</h1>
 
-Сценарий для студентов:
+<section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
+  <div id="messages" class="messages"></div>
+
+  <form id="message-form" class="message-form" ws-send>
+    <input type="text" name="username" placeholder="Ваш ник" required />
+    <input type="text" name="text" placeholder="Сообщение" required />
+    <button type="submit">Отправить</button>
+  </form>
+
+  <div class="burst-controls">
+    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
+    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
+  </div>
+
+  <script>
+    let burstBusy = false;
+
+    function setFormDefaultsIfEmpty() {
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
+      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
+    }
+
+    async function sendBurst(count) {
+      if (burstBusy) return;
+      burstBusy = true;
+
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      setFormDefaultsIfEmpty();
+      const baseText = textInput.value.trim();
+      usernameInput.focus();
+
+      const btn100 = document.getElementById('send-100');
+      const btn1000 = document.getElementById('send-1000');
+      if (btn100) btn100.disabled = true;
+      if (btn1000) btn1000.disabled = true;
+
+      let i = 1;
+      const batchSize = 20;
+
+      while (i <= count) {
+        const end = Math.min(count, i + batchSize - 1);
+        for (; i <= end; i++) {
+          textInput.value = `${baseText} #${i}`;
+          form.requestSubmit();
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      burstBusy = false;
+      if (btn100) btn100.disabled = false;
+      if (btn1000) btn1000.disabled = false;
+    }
+  </script>
+</section>
+{% endblock %}
+```
+
+**Сценарий проверки нагрузки:**
 
 1. Открыть одну или несколько вкладок с комнатой `room-1`:
    - локально: `http://localhost:8100/rooms/room-1`;
@@ -554,19 +569,15 @@ git clean -fd
 
 ## Часть 2: Чат с базой данных и брокером сообщений
 
-В этом варианте в браузере по-прежнему используются **HTMX** и расширение **WebSocket** (`htmx-ext-ws`): страница комнаты подключается к серверу по протоколу WebSocket и отправляет сообщения через форму с атрибутом `ws-send`. На стороне сервера цепочка обработки отличается от варианта 0: каждое новое сообщение сначала попадает в **брокер сообщений RabbitMQ**, затем отдельный процесс **worker** записывает его в **PostgreSQL**, после чего факт сохранения снова оформляется как событие в RabbitMQ, и процесс **web** рассылает готовый фрагмент HTML всем клиентам, открывшим ту же комнату.
+Клиент как в части 1 (**HTMX**, `ws-send`, WebSocket). Отличие — на сервере: **web** не пишет в БД напрямую и не шлёт HTML сразу всем; сообщение идёт через **RabbitMQ** → **worker** (запись в **PostgreSQL**) → снова RabbitMQ → фоновая задача **web** `consume_persisted_events` и **broadcast** в комнату.
 
-Ниже приведены полные листинги файлов, которые нужно иметь в проекте этого варианта (каталог `app/`, файл `worker.py` в корне рядом с `docker-compose.yml`, файлы шаблонов и стилей). Вы можете развивать проект из **части 1**, добавляя и заменяя файлы, либо собрать новый каталог и перенести туда фрагменты из методички.
+**По шагам:** (1) JSON с формы попадает в **web**, публикация в RabbitMQ с ключом `chat.message.created`. (2) **worker** читает очередь, вставляет строку в `messages`, публикует `chat.message.persisted`. (3) **web** в `consume_persisted_events` забирает «persisted», собирает HTML и вызывает `manager.broadcast`.
 
-**Поток данных по шагам:**
-
-1. Пользователь отправляет сообщение из формы: расширение WebSocket для HTMX передаёт на сервер JSON с полями имени пользователя и текста по маршруту WebSocket `/ws/{room_id}`. Процесс контейнера **web** (приложение Uvicorn + FastAPI) не пишет сразу в базу и не рассылает сообщение всем: он публикует в RabbitMQ событие с ключом маршрутизации `chat.message.created` (сообщение «создано, ожидает сохранения»).
-2. Процесс **worker** подписан на очередь входящих сообщений, читает событие, выполняет вставку строки в таблицу `messages` в PostgreSQL, затем публикует в RabbitMQ второе событие с ключом `chat.message.persisted` (сообщение «успешно сохранено», в теле — идентификатор записи и время).
-3. В процессе **web** в фоне запущена асинхронная задача `consume_persisted_events`: она читает очередь событий «persisted», собирает HTML-фрагмент с разметкой сообщения и вызывает `manager.broadcast`, чтобы отправить этот фрагмент по WebSocket всем подключениям данной комнаты.
-
-**Подготовка:** в корне проекта должны лежать `docker-compose.yml` с сервисами `web`, `worker`, `postgres`, `rabbitmq` и файл переменных окружения `.env`, заполненный по образцу из подраздела **3.0**.
+Ниже — листинги для варианта с `app/`, `worker.py` в корне, шаблонами и стилями; можно развивать проект из части 1 или собрать каталог заново. Нужны `docker-compose.yml` (сервисы `web`, `worker`, `postgres`, `rabbitmq`) и `.env` по **§3.0**.
 
 ## 3. Backend (приложение и фоновые процессы)
+
+Файлы **§3.1–§3.5** вводите по порядку; **промежуточный запуск** всего стека после одного только `db.py` или только `mq.py` не требуется — приложение и worker должны быть описаны целиком. После того как добавлены **§3**, **§4**, актуальный `docker-compose.yml` и `.env` (часть 2), переходите к **§5** и проверяйте запуск **по каждому подпункту 5.1, 5.2, …** с тестовым обращением к приложению.
 
 ### 3.0 Файл переменных окружения `.env` (образец для копирования в свой `.env`)
 
@@ -584,7 +595,7 @@ MQ_ROUTING_KEY_CREATED=chat.message.created
 MQ_ROUTING_KEY_PERSISTED=chat.message.persisted
 ```
 
-В `docker-compose.yml` для сервиса **web** задан проброс **`8100:8000`**: с хоста (браузер, `curl`) доступен порт **8100**, внутри контейнера Uvicorn слушает порт **8000**. Проверки ниже используют адрес `http://127.0.0.1:8100` — это тот же принцип, что и в **части 1**.
+Проброс **web** `8100:8000` — как в **§1.4**; проверки ниже — `http://127.0.0.1:8100`.
 
 ### 3.1 `app/db.py`
 
@@ -909,7 +920,7 @@ if __name__ == "__main__":
 
 ## 4. Шаблоны и стили
 
-Ниже — полные тексты файлов для варианта с PostgreSQL и RabbitMQ. Структура страницы совпадает с **частью 1**: подключаются библиотека HTMX, расширение WebSocket для HTMX, таблица стилей; на странице комнаты задаётся `hx-ext="ws"`, адрес WebSocket `ws-connect="/ws/{{ room_id }}"`, форма с атрибутом `ws-send` отправляет поля как JSON по уже открытому соединению. Заголовок документа в базовом шаблоне — **Socket MQ Chat** (в простом чате из части 1 часто используют **Socket MQ Chat V0**). Под формой добавлены кнопки нагрузки и скрипт **sendBurst** (см. раздел **2.11**): те же кнопки, что и в варианте 0, чтобы можно было сравнивать нагрузку на «только память» и на цепочку с брокером и базой.
+Те же идеи, что в части 1 (HTMX, `ws-connect`, `ws-send`); заголовок в `base.html` — **Socket MQ Chat** (в варианте 0 часто **V0**). Кнопки нагрузки и **sendBurst** — см. **§2.11**; сравнение in-memory и цепочки с брокером/БД.
 
 ### 4.1 `app/templates/base.html`
 
@@ -931,6 +942,8 @@ if __name__ == "__main__":
 ```
 
 ### 4.2 `app/templates/room.html`
+
+Тот же шаблон, что в **§2.11** (форма `ws-send`, кнопки **«Отправить 100»** / **«Отправить 1000»**, `sendBurst`). Ниже — полный текст для части 2.
 
 ```html
 {% extends "base.html" %}
@@ -1050,19 +1063,23 @@ body {
 }
 ```
 
+**Перед §5:** убедитесь, что в проекте есть все листинги **§3–§4**, `worker.py`, `docker-compose.yml` части 2 и `.env` по **§3.0**.
+
 ---
 
 ## 5. Проверка по шагам
 
-Все команды выполняйте в **корневом каталоге проекта**, где лежит `docker-compose.yml` этого варианта (тот же каталог, что и файл `.env`).
+Команды — из **корня проекта** (рядом `docker-compose.yml` и `.env`).
+
+**Правило:** после **каждого** из **§5.1–§5.5** выполните указанный там **запуск** и **проверку** (браузер, `curl`, логи, при необходимости БД). К следующему подпункту переходите только если результат совпадает с ожидаемым.
 
 ### 5.1 Инфраструктура
 Команда:
 ```bash
 docker compose up -d postgres rabbitmq
 ```
-Проверка:
-- оба контейнера `running`;
+Проверка (приложение **web** на этом шаге ещё не запускаем):
+- `docker compose ps` — контейнеры **postgres** и **rabbitmq** в состоянии `running`;
 - RabbitMQ UI открывается (порт `15672` в `docker-compose.yml`).
 
 В `docker-compose.yml` для PostgreSQL задан проброс **`5433:5432`**: с вашего компьютера к базе можно подключиться на `localhost:5433` (логин/пароль из `environment` сервиса `postgres`), а приложение внутри Docker по-прежнему использует в `DATABASE_URL` хост **`postgres`** и порт **5432** внутри сети контейнеров. Так удаётся избежать конфликта, если на хосте уже занят стандартный порт **5432**.
@@ -1072,9 +1089,12 @@ docker compose up -d postgres rabbitmq
 ```bash
 docker compose up -d --build web
 ```
-Проверка:
-- `http://127.0.0.1:8100/health` возвращает `{"status":"ok"}`;
-- `http://127.0.0.1:8100/rooms/room-1` открывается в браузере.
+Проверка (тестовый запуск приложения):
+```bash
+curl -s http://127.0.0.1:8100/health
+```
+- ответ `{"status":"ok"}`;
+- в браузере открывается `http://127.0.0.1:8100/rooms/room-1`.
 
 ### 5.3 Worker
 Команда:
@@ -1082,7 +1102,10 @@ docker compose up -d --build web
 docker compose up -d --build worker
 ```
 Проверка:
-- worker живой, не падает при старте;
+```bash
+docker compose logs worker --tail 50
+```
+- процесс worker не перезапускается в цикле;
 - в логах нет ошибки `relation "messages" does not exist`.
 
 ### 5.4 Realtime (две вкладки)
@@ -1099,40 +1122,29 @@ docker compose up -d --build worker
 ### 5.5 База данных
 Проверка:
 - в таблице `messages` появляются записи после отправки (через `psql` или клиент к БД);
-- в приведённой ниже реализации приложение при открытии страницы комнаты не подгружает историю из PostgreSQL в шаблон: пользователь видит только новые сообщения, которые приходят по WebSocket после того, как worker сохранил запись и сработала рассылка `persisted`.
+- история из PostgreSQL в шаблон не подгружается: в интерфейсе — только новые сообщения после сохранения worker и рассылки `persisted`.
 
-### 5.6 Деплой на VPS: что меняется по сравнению с разделом **2** (простой чат)
+### 5.6 Деплой на VPS (часть 2 вместо варианта 0 из **§2**)
 
-Раздел **«2. Быстрый деплой на VPS через git + ssh»** описывает выкладку **варианта 0**: один контейнер **web**, в `.env` только хост и порт приложения, в Nginx обратный прокси на **порт 8100**. Для **части 2** (PostgreSQL + RabbitMQ + worker) на сервере нужно учесть следующее.
+**§2** — один контейнер **web** и короткий `.env`. Для части 2:
 
-**Файл `.env` на сервере**  
-Вместо двух строк из раздела **2.4** используйте полный набор переменных, как в подразделе **3.0** этой методички: строка подключения к **PostgreSQL**, URL **RabbitMQ**, имена **очереди и обменника**, ключи **маршрутизации**. Пароли к базе и к RabbitMQ должны совпадать с теми, что заданы в `docker-compose.yml` для сервисов `postgres` и `rabbitmq` (или задайте свои значения согласованно в `.env` и в секции `environment` контейнеров).
-
-**Команда запуска**  
-После `git pull` выполняйте `docker compose up -d --build` в каталоге с **текущим** `docker-compose.yml` части 2: поднимутся не только **web**, но и **worker**, **postgres**, **rabbitmq**. Проверка списка: `docker compose ps` — должны быть запущены все нужные сервисы.
-
-**Порт приложения и Nginx**  
-На хосте VPS Nginx по разделу **2.6** проксирует на **`127.0.0.1:8100`** — это внешний порт, который Docker перенаправляет на **8000** внутри контейнера **web**. Дополнительно менять `proxy_pass` при деплое части 2 не нужно, если сохранён проброс `8100:8000`. После правок: `sudo nginx -t` и `sudo systemctl reload nginx`.
-
-**Ресурсы и безопасность**  
-На VPS одновременно работают четыре сервиса вместо одного; может понадобиться больше оперативной памяти. На хост проброшены порты **5433** (PostgreSQL; внутри контейнера по-прежнему 5432) и **5672** / **15672** (RabbitMQ) — на боевом сервере имеет смысл не открывать их в файрволе для интернета и оставить доступ только из Docker-сети; веб-пользователям по-прежнему достаточно **443** / **80** на Nginx.
-
-**Обновление кода**  
-После каждого `git pull` выполняйте `docker compose up -d --build`, чтобы пересобрать образы и перезапустить **web** и **worker**. Если менялись только переменные окружения, иногда достаточно `docker compose up -d` без `--build` — ориентируйтесь на вывод `docker compose`.
-
-**Проверка после выкладки**  
-Адреса вида `https://ваш-домен/health` и страница комнаты должны отвечать так же, как при локальной проверке в **5.2**–**5.4**, но с вашим доменом вместо `127.0.0.1`.
+- **`.env`** — полный набор по **§3.0** (PostgreSQL, RabbitMQ, очереди, ключи маршрутизации); значения должны совпадать с `docker-compose.yml` (или согласованно изменены везде).
+- **Запуск:** после `git pull` — `docker compose up -d --build` в каталоге с compose части 2; `docker compose ps` — подняты **web**, **worker**, **postgres**, **rabbitmq**.
+- **Nginx:** как в **§2.6**, `proxy_pass` на `127.0.0.1:8100` при пробросе `8100:8000` менять не нужно. После правок конфига: `sudo nginx -t`, `sudo systemctl reload nginx`.
+- **Ресурсы и порты:** нагрузка выше, чем у варианта 0. Порты **5433**, **5672**, **15672** на хосте закрыть от интернета; для пользователей — **80**/**443**.
+- **Обновления:** обычно `docker compose up -d --build` после `git pull`; без пересборки образов — только если менялись не файлы приложения.
+- **Проверка:** `/health` и комната по домену — как в **§5.2–5.4**, но с вашим хостом.
 
 ---
 
-## 6. Проверка health и опциональный тест
+## 6. Проверка health и тесты
 
-Быстрая проверка без pytest:
+Вручную:
 ```bash
 curl -s http://127.0.0.1:8100/health
 ```
 
-В корне проекта должен лежать файл **`pytest.ini`** с настройкой `pythonpath = .`, иначе при запуске `pytest` из каталога репозитория импорт `from app.main` не находит пакет `app` (так же настроен CI в GitHub Actions).
+**`pytest.ini`** в корне (нужен для импорта `app` при `pytest` и в CI):
 
 ```ini
 [pytest]
@@ -1140,7 +1152,7 @@ pythonpath = .
 testpaths = tests
 ```
 
-Минимальный автотест с использованием **pytest**: создайте в проекте каталог `tests` и файл `tests/test_health.py` со следующим содержимым:
+**`tests/test_health.py`** — проверка **`GET /health`** через `TestClient`; **monkeypatch** отключает реальные `init_models`, `mq.connect` и фоновую `consume_persisted_events`, чтобы не требовать PostgreSQL/RabbitMQ (в **Starlette 1.x** у `TestClient` нет `lifespan="off"`).
 
 ```python
 import asyncio
@@ -1168,14 +1180,16 @@ def test_health(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.json() == {"status": "ok"}
 ```
 
-В тесте подменяются `init_models`, `mq.connect` и фоновая `consume_persisted_events`, чтобы не подключаться к PostgreSQL и RabbitMQ (в CI их нет). В **Starlette 1.x** у `TestClient` больше нет режима `lifespan="off"`, поэтому такой способ надёжнее.
+**`tests/ws_check.py`** — не pytest: скрипт `python tests/ws_check.py` при поднятом Compose. Два WebSocket на `room-1`, затем POST на `/rooms/room-1/messages`; в консоль выводятся ответы обоих сокетов (цепочка HTTP → очередь → worker → БД → очередь → WS). Пакет **websockets** — из `requirements.txt`. В **§8** в CI выполняется только `pytest`.
 
-Запуск теста внутри контейнера **web** из корня проекта:
 ```bash
 docker compose run --rm web pytest -q
 ```
 
-Дополнительно можно добавить сценарий ручной проверки (два клиента WebSocket и отправка через HTTP), поместив скрипт, например, в `tests/ws_check.py`; для такого скрипта на машине разработчика понадобятся запущенные контейнеры и установленный пакет **websockets** в том окружении, из которого вы запускаете Python.
+```bash
+python tests/ws_check.py
+```
+(второй запуск — с хоста, когда Compose поднят и порт **8100** доступен.)
 
 ---
 
@@ -1185,23 +1199,17 @@ docker compose run --rm web pytest -q
 - скриншот: чат открыт в двух вкладках браузера, видно появление одного и того же сообщения;
 - скриншот или текст логов контейнера **worker** либо снимок очередей в интерфейсе управления RabbitMQ;
 - файл **README** с пошаговым запуском через Docker Compose (какие сервисы поднимаются и в каком порядке);
-- краткое текстовое описание цепочки без стрелок-аббревиатур: клиент отправляет сообщение по WebSocket; приложение **web** публикует событие в **RabbitMQ**; процесс **worker** записывает сообщение в **PostgreSQL** и снова публикует событие в **RabbitMQ**; приложение **web** получает подтверждение и рассылает HTML по WebSocket подключениям комнаты.
+- краткое описание цепочки из **части 2** (клиент → **web** → RabbitMQ → **worker** → PostgreSQL → RabbitMQ → рассылка HTML по WebSocket в комнату), связным текстом, без «стрелочных» аббревиатур.
 
 ---
 
 ## 8. Этап CI (GitHub Actions)
 
-**Цель:** при каждом `push` в ветку **`master`** автоматически запускать тесты из раздела **6**, чтобы ошибки в коде выявлялись до ручного деплоя на VPS.
+На **`push`** в **`master`** — установка зависимостей и **`pytest -q`** (см. **§6**), чтобы ловить поломки до деплоя.
 
-### 8.1 Что сделать
+Добавьте `.github/workflows/ci.yml` (после первого push проверьте вкладку **Actions**).
 
-1. В корне репозитория создайте каталог `.github/workflows/`.
-2. Добавьте файл `.github/workflows/ci.yml` (см. пример ниже).
-3. Шаги job: `checkout`, установка Python, `pip install -r requirements.txt`, `pytest -q`.
-
-Workflow в примере срабатывает **только** на **`push`** в ветку **`master`** (не на Pull Request и не на другие ветки). После первого такого push откройте на GitHub вкладку **Actions** и убедитесь, что запуск **успешно** завершился.
-
-### 8.2 Пример `.github/workflows/ci.yml`
+### 8.1 Пример `.github/workflows/ci.yml`
 
 ```yaml
 name: CI
@@ -1222,19 +1230,18 @@ jobs:
       - run: pytest -q
 ```
 
-В примере указана **3.13** — как минимальная версия для этого проекта; при необходимости замените на ту же мажорную версию, что у вас локально (не ниже **3.13**, если так зафиксировано в репозитории).
+`python-version` должен совпадать с версией в **Dockerfile** / локальной разработке (в проекте — **3.13**).
 
-### 8.3 Что сдать (дополнительно к разделу 7)
+### 8.2 Что сдать (дополнительно к разделу 7)
 
 - файл `.github/workflows/ci.yml` в репозитории;
 - скриншот успешного запуска workflow (**Actions** → выбранный run → зелёная галочка).
 
-### 8.4 По желанию (необязательно)
+### 8.3 По желанию
 
-- отдельный шаг сборки Docker-образа (`docker build`), чтобы ловить ошибки Dockerfile до сервера;
-- линтер (**ruff** / **flake8**) перед `pytest`.
-
-Если позже понадобится проверять и **Pull Request** в `master` до слияния, в блок `on:` можно добавить `pull_request: branches: [master]`.
+- `docker build` в job;
+- линтер (**ruff** / **flake8**) перед `pytest`;
+- триггер **`pull_request`** на `master` — добавьте в `on:` при необходимости.
 
 ---
 

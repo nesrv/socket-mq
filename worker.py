@@ -15,6 +15,7 @@ from app.mq import (
 
 async def run_worker():
     await init_models()
+    # Отдельный процесс: забирает «новое сообщение», пишет в PostgreSQL, шлёт «сохранено» в exchange
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     channel = await connection.channel()
     exchange = await channel.declare_exchange(
@@ -37,6 +38,7 @@ async def run_worker():
                     row = (await session.execute(stmt)).one()
                     await session.commit()
 
+                # Событие для web: по нему чат показывает сообщение уже с id и временем из БД
                 persisted = {
                     "id": row.id,
                     "room_id": payload["room_id"],

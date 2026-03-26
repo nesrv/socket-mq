@@ -17,6 +17,7 @@ class WSManager:
                 del self.rooms[room_id]
 
     async def broadcast(self, room_id: str, payload: str) -> None:
+        # Клиент мог закрыть вкладку — send падает, такое соединение убираем из комнаты
         dead = []
         for ws in self.rooms.get(room_id, set()):
             try:

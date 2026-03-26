@@ -27,5 +27,6 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_co
 
 
 async def init_models() -> None:
+    """Создаёт таблицы, если их ещё нет (web и worker вызывают при старте)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
