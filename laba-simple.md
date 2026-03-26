@@ -275,21 +275,73 @@ async def health():
 ```
 
 #### Шаг 4. Создайте шаблон `app/templates/room.html`
+Ниже — полный шаблон: форма с `ws-send`, кнопки **«Отправить 100»** / **«Отправить 1000»** и скрипт `sendBurst` (см. также раздел **2.11**).
+
 ```html
 {% extends "base.html" %}
 {% block content %}
 <h1>Комната: {{ room_id }}</h1>
 
-<!-- Подключение к WebSocket комнаты -->
 <section id="chat-root" hx-ext="ws" ws-connect="/ws/{{ room_id }}">
-  <!-- Сюда сервер добавляет сообщения через hx-swap-oob -->
   <div id="messages" class="messages"></div>
-  <!-- Форма отправляется по WS благодаря ws-send -->
+
   <form id="message-form" class="message-form" ws-send>
     <input type="text" name="username" placeholder="Ваш ник" required />
     <input type="text" name="text" placeholder="Сообщение" required />
     <button type="submit">Отправить</button>
   </form>
+
+  <div class="burst-controls">
+    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
+    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
+  </div>
+
+  <script>
+    let burstBusy = false;
+
+    function setFormDefaultsIfEmpty() {
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
+      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
+    }
+
+    async function sendBurst(count) {
+      if (burstBusy) return;
+      burstBusy = true;
+
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      setFormDefaultsIfEmpty();
+      const baseText = textInput.value.trim();
+      usernameInput.focus();
+
+      const btn100 = document.getElementById('send-100');
+      const btn1000 = document.getElementById('send-1000');
+      if (btn100) btn100.disabled = true;
+      if (btn1000) btn1000.disabled = true;
+
+      let i = 1;
+      const batchSize = 20;
+
+      while (i <= count) {
+        const end = Math.min(count, i + batchSize - 1);
+        for (; i <= end; i++) {
+          textInput.value = `${baseText} #${i}`;
+          form.requestSubmit();
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      burstBusy = false;
+      if (btn100) btn100.disabled = false;
+      if (btn1000) btn1000.disabled = false;
+    }
+  </script>
 </section>
 {% endblock %}
 ```
@@ -333,6 +385,12 @@ body {
   display: grid;
   grid-template-columns: 160px 1fr 120px;
   gap: 8px;
+}
+
+.burst-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 ```
 
@@ -473,82 +531,14 @@ git clean -fd
 ```
 
 ### 2.11 Имитация нагрузки через кнопки в чате
-Чтобы наглядно показать поведение простого варианта чата под нагрузкой (без MQ и БД), можно использовать специальные кнопки на веб-интерфейсе:
+Для наглядной проверки поведения чата под серией сообщений в интерфейсе добавлены кнопки:
 
-- кнопка **«Отправить 100»** — быстро отправляет 100 сообщений в текущую комнату;
-- кнопка **«Отправить 1000»** — быстро отправляет 1000 сообщений.
+- **«Отправить 100»** — последовательно отправляет 100 сообщений в текущую комнату;
+- **«Отправить 1000»** — то же для 1000 сообщений.
 
-Эти кнопки добавляются в шаблон `app/templates/room.html` рядом с формой отправки сообщений и используют ту же форму с `ws-send`, поэтому все сообщения уходят через WebSocket, как обычные.
+Они стоят под обычной формой в `app/templates/room.html`, используют ту же форму с атрибутом `ws-send`: для каждого номера меняется поле `text` и вызывается `form.requestSubmit()`, расширение WebSocket для HTMX отправляет JSON по уже открытому соединению. В **части 1** (простой чат) сообщения обрабатываются только в памяти процесса **web**; в **части 2** каждое сообщение проходит цепочку RabbitMQ → worker → PostgreSQL → рассылка по WebSocket — нагрузочные кнопки удобны для демонстрации очередей и задержек.
 
-**Фрагмент HTML, который нужно добавить в `app/templates/room.html` под формой:**
-
-```html
-  <div class="burst-controls">
-    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
-    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
-  </div>
-
-  <script>
-    // Отправка серии сообщений через текущую форму (ws-send).
-    // Это помогает быстро создать нагрузку и продемонстрировать эффект при отсутствии MQ.
-    let burstBusy = false;
-
-    function setFormDefaultsIfEmpty() {
-      const form = document.getElementById('message-form');
-      const usernameInput = form.querySelector('input[name="username"]');
-      const textInput = form.querySelector('input[name="text"]');
-
-      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
-      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
-    }
-
-    async function sendBurst(count) {
-      if (burstBusy) return;
-      burstBusy = true;
-
-      const form = document.getElementById('message-form');
-      const usernameInput = form.querySelector('input[name="username"]');
-      const textInput = form.querySelector('input[name="text"]');
-
-      setFormDefaultsIfEmpty();
-      const baseText = textInput.value.trim();
-      usernameInput.focus();
-
-      const btn100 = document.getElementById('send-100');
-      const btn1000 = document.getElementById('send-1000');
-      if (btn100) btn100.disabled = true;
-      if (btn1000) btn1000.disabled = true;
-
-      // Чтобы не зависнуть в одном длинном цикле, отправляем пачками.
-      let i = 1;
-      const batchSize = 20;
-
-      while (i <= count) {
-        const end = Math.min(count, i + batchSize - 1);
-        for (; i <= end; i++) {
-          textInput.value = `${baseText} #${i}`;
-          // requestSubmit вызовет submit-ивент, а htmx-ext-ws перешлет данные в WS.
-          form.requestSubmit();
-        }
-        await new Promise((r) => setTimeout(r, 0));
-      }
-
-      burstBusy = false;
-      if (btn100) btn100.disabled = false;
-      if (btn1000) btn1000.disabled = false;
-    }
-  </script>
-```
-
-**И фрагмент CSS, который нужно добавить в `app/static/styles.css`:**
-
-```css
-.burst-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-```
+Полные листинги разметки, скрипта и класса `.burst-controls` см. в **шаге 4** и **шаге 5** (часть 1) и в подразделах **4.2** и **4.3** (часть 2); в учебном репозитории они уже встроены в проект.
 
 Сценарий для студентов:
 
@@ -919,7 +909,7 @@ if __name__ == "__main__":
 
 ## 4. Шаблоны и стили
 
-Ниже — полные тексты файлов для варианта с PostgreSQL и RabbitMQ. Структура страницы совпадает с **частью 1**: подключаются библиотека HTMX, расширение WebSocket для HTMX, таблица стилей; на странице комнаты задаётся `hx-ext="ws"`, адрес WebSocket `ws-connect="/ws/{{ room_id }}"`, форма с атрибутом `ws-send` отправляет поля как JSON по уже открытому соединению. Заголовок документа в базовом шаблоне — **Socket MQ Chat** (в простом чате из части 1 часто используют **Socket MQ Chat V0**). Кнопки массовой отправки из раздела **2.11** сюда не включены: при необходимости перенесите HTML-блок с кнопками и встроенный скрипт из шаблона комнаты части 1 и вставьте в `room.html` сразу после полей формы, перед закрывающим тегом секции.
+Ниже — полные тексты файлов для варианта с PostgreSQL и RabbitMQ. Структура страницы совпадает с **частью 1**: подключаются библиотека HTMX, расширение WebSocket для HTMX, таблица стилей; на странице комнаты задаётся `hx-ext="ws"`, адрес WebSocket `ws-connect="/ws/{{ room_id }}"`, форма с атрибутом `ws-send` отправляет поля как JSON по уже открытому соединению. Заголовок документа в базовом шаблоне — **Socket MQ Chat** (в простом чате из части 1 часто используют **Socket MQ Chat V0**). Под формой добавлены кнопки нагрузки и скрипт **sendBurst** (см. раздел **2.11**): те же кнопки, что и в варианте 0, чтобы можно было сравнивать нагрузку на «только память» и на цепочку с брокером и базой.
 
 ### 4.1 `app/templates/base.html`
 
@@ -955,6 +945,58 @@ if __name__ == "__main__":
     <input type="text" name="text" placeholder="Сообщение" required />
     <button type="submit">Отправить</button>
   </form>
+
+  <div class="burst-controls">
+    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
+    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
+  </div>
+
+  <script>
+    let burstBusy = false;
+
+    function setFormDefaultsIfEmpty() {
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
+      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
+    }
+
+    async function sendBurst(count) {
+      if (burstBusy) return;
+      burstBusy = true;
+
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      setFormDefaultsIfEmpty();
+      const baseText = textInput.value.trim();
+      usernameInput.focus();
+
+      const btn100 = document.getElementById('send-100');
+      const btn1000 = document.getElementById('send-1000');
+      if (btn100) btn100.disabled = true;
+      if (btn1000) btn1000.disabled = true;
+
+      let i = 1;
+      const batchSize = 20;
+
+      while (i <= count) {
+        const end = Math.min(count, i + batchSize - 1);
+        for (; i <= end; i++) {
+          textInput.value = `${baseText} #${i}`;
+          form.requestSubmit();
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      burstBusy = false;
+      if (btn100) btn100.disabled = false;
+      if (btn1000) btn1000.disabled = false;
+    }
+  </script>
 </section>
 {% endblock %}
 ```
@@ -999,6 +1041,12 @@ body {
   display: grid;
   grid-template-columns: 160px 1fr 120px;
   gap: 8px;
+}
+
+.burst-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 ```
 

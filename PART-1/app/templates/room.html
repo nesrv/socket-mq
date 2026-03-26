@@ -10,5 +10,57 @@
     <input type="text" name="text" placeholder="Сообщение" required />
     <button type="submit">Отправить</button>
   </form>
+
+  <div class="burst-controls">
+    <button type="button" id="send-100" onclick="sendBurst(100)">Отправить 100</button>
+    <button type="button" id="send-1000" onclick="sendBurst(1000)">Отправить 1000</button>
+  </div>
+
+  <script>
+    let burstBusy = false;
+
+    function setFormDefaultsIfEmpty() {
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      if (!usernameInput.value.trim()) usernameInput.value = 'load-test';
+      if (!textInput.value.trim()) textInput.value = 'Нагрузочное сообщение';
+    }
+
+    async function sendBurst(count) {
+      if (burstBusy) return;
+      burstBusy = true;
+
+      const form = document.getElementById('message-form');
+      const usernameInput = form.querySelector('input[name="username"]');
+      const textInput = form.querySelector('input[name="text"]');
+
+      setFormDefaultsIfEmpty();
+      const baseText = textInput.value.trim();
+      usernameInput.focus();
+
+      const btn100 = document.getElementById('send-100');
+      const btn1000 = document.getElementById('send-1000');
+      if (btn100) btn100.disabled = true;
+      if (btn1000) btn1000.disabled = true;
+
+      let i = 1;
+      const batchSize = 20;
+
+      while (i <= count) {
+        const end = Math.min(count, i + batchSize - 1);
+        for (; i <= end; i++) {
+          textInput.value = `${baseText} #${i}`;
+          form.requestSubmit();
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      burstBusy = false;
+      if (btn100) btn100.disabled = false;
+      if (btn1000) btn1000.disabled = false;
+    }
+  </script>
 </section>
 {% endblock %}
