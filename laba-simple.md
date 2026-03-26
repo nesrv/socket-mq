@@ -36,116 +36,13 @@ socket-mq/
   docker-compose.yml
 ```
 
----
-
-## 9. Быстрый деплой на VPS через git + ssh
-
-Данные сервера:
-- SSH: `alekseeva@81.90.182.174`
-- Домен: `alekseeva.h1n.ru`
-
-### 9.1 Первый вход
-```bash
-ssh alekseeva@81.90.182.174
-```
-
-### 9.2 Подготовка сервера (один раз)
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y git docker.io docker-compose-plugin nginx certbot python3-certbot-nginx
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-```
-После этого переподключитесь по SSH.
-
-### 9.3 Клонирование проекта
-```bash
-mkdir -p /opt/socket-mq
-cd /opt/socket-mq
-git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> app
-cd app
-```
-
-### 9.4 Настройка `.env`
-Создайте файл `.env` рядом с `docker-compose.yml`:
-
-```env
-APP_HOST=0.0.0.0
-APP_PORT=8000
-DATABASE_URL=postgresql+asyncpg://chat:chat@postgres:5432/chat
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-MQ_EXCHANGE=chat.events
-MQ_QUEUE_INCOMING=chat.messages.incoming
-MQ_QUEUE_PERSISTED=chat.messages.persisted
-MQ_ROUTING_KEY_CREATED=chat.message.created
-MQ_ROUTING_KEY_PERSISTED=chat.message.persisted
-```
-
-### 9.5 Запуск приложения
-```bash
-docker compose up -d --build
-docker compose ps
-```
-
-### 9.6 Nginx конфиг для домена
-Создайте файл `/etc/nginx/sites-available/alekseeva.h1n.ru`:
-
-```nginx
-server {
-    listen 80;
-    server_name alekseeva.h1n.ru;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /ws/ {
-        proxy_pass http://127.0.0.1:8000/ws/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-}
-```
-
-Активируйте конфиг:
-```bash
-sudo ln -s /etc/nginx/sites-available/alekseeva.h1n.ru /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 9.7 HTTPS сертификат
-```bash
-sudo certbot --nginx -d alekseeva.h1n.ru
-```
-
-### 9.8 Проверка
-- `http://alekseeva.h1n.ru/health`
-- `https://alekseeva.h1n.ru/health`
-
-### 9.9 Обновление деплоя (каждый раз)
-```bash
-ssh alekseeva@81.90.182.174
-cd /opt/socket-mq/app
-git pull
-docker compose up -d --build
-```
-
-
-
 ## 1. Подготовка окружения
 
 ### 1.1 `.env.example`
 
 ```env
 APP_HOST=0.0.0.0
-APP_PORT=8000
+APP_PORT=8100
 ```
 
 ### 1.2 `requirements.txt`
@@ -178,13 +75,13 @@ services:
   web:
     build: .
     container_name: socket_mq_web_v0
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
     env_file:
       - .env
     volumes:
       - ./:/code
     ports:
-      - "8000:8000"
+      - "8100:8100"
 ```
 
 
@@ -444,8 +341,104 @@ docker compose up -d --build
 
 
 Проверка:
-- `http://localhost:8000/health` возвращает `{"status":"ok"}`;
-- страница чата открывается на `http://localhost:8000/rooms/room-1`.
+- `http://localhost:8100/health` возвращает `{"status":"ok"}`;
+- страница чата открывается на `http://localhost:8100/rooms/room-1`.
+
+---
+
+## 9. Быстрый деплой на VPS через git + ssh
+
+Данные сервера:
+- SSH: `alekseeva@81.90.182.174`
+- Домен: `alekseeva.h1n.ru`
+
+### 9.1 Первый вход
+```bash
+ssh alekseeva@81.90.182.174
+```
+
+### 9.2 Подготовка сервера (один раз)
+```bash
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+Пояснение:
+- `sudo systemctl enable --now docker` - запускает Docker сейчас и включает автозапуск после перезагрузки сервера.
+- `sudo usermod -aG docker $USER` - добавляет текущего пользователя в группу `docker`, чтобы запускать команды без `sudo`.
+
+После этого переподключитесь по SSH.
+
+### 9.3 Клонирование проекта
+```bash
+mkdir -p /opt/socket-mq
+cd /opt/socket-mq
+git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> app
+cd app
+```
+
+### 9.4 Настройка `.env`
+Создайте файл `.env` рядом с `docker-compose.yml`:
+
+```env
+APP_HOST=0.0.0.0
+APP_PORT=8100
+```
+
+### 9.5 Запуск приложения
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+### 9.6 Nginx конфиг для домена
+Создайте файл `/etc/nginx/sites-available/alekseeva.h1n.ru`:
+
+```nginx
+server {
+    listen 80;
+    server_name alekseeva.h1n.ru;
+
+    location / {
+        proxy_pass http://127.0.0.1:8100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8100/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Активируйте конфиг:
+```bash
+sudo ln -s /etc/nginx/sites-available/alekseeva.h1n.ru /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 9.7 HTTPS сертификат
+```bash
+sudo certbot --nginx -d alekseeva.h1n.ru
+```
+
+### 9.8 Проверка
+- `http://alekseeva.h1n.ru/health`
+- `https://alekseeva.h1n.ru/health`
+
+### 9.9 Обновление деплоя (каждый раз)
+```bash
+ssh alekseeva@81.90.182.174
+cd /opt/socket-mq/app
+git pull
+docker compose up -d --build
+```
 
 
 
