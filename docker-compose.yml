@@ -1,11 +1,43 @@
 services:
   web:
     build: .
-    container_name: socket_mq_web_v0
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
+    container_name: socket_mq_web
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - .env
     volumes:
       - ./:/code
     ports:
-      - "8100:8100"
+      - "8100:8000"
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  worker:
+    build: .
+    container_name: socket_mq_worker
+    command: python worker.py
+    env_file:
+      - .env
+    volumes:
+      - ./:/code
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  postgres:
+    image: postgres:16
+    container_name: socket_mq_postgres
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+    ports:
+      - "5432:5432"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: socket_mq_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"

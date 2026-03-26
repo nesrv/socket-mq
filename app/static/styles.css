@@ -36,9 +36,3 @@ body {
   grid-template-columns: 160px 1fr 120px;
   gap: 8px;
 }
-
-.burst-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
